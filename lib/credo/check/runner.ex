@@ -19,8 +19,26 @@ defmodule Credo.Check.Runner do
       |> warn_about_ineffective_patterns(exec)
       |> fix_deprecated_notation_for_checks_without_params()
 
+    # The execution context specifies the maximum amount of concurrency we're allowed to use.
+    # We want to split those concurrent processes between checks (thus, we can run both
+    # Credo.Check.Readability.AliasOrder and Credo.Check.Readability.FunctionNames concurrently)
+    # and the individual files each of those individual checks runs on.
+    #
+    # This improves upon the naive approaches of either:
+    #
+    # 1) running all checks on all files concurrently (too much concurrency!), or
+    # 2) running one check at a time, with high concurrency on the files (leaves perf on the
+    #    table because not everything involved in running a check is CPU bound)
+    check_concurrency = ceil(exec.max_concurrent_check_runs / 2)
+    file_concurrency = exec.max_concurrent_check_runs - check_concurrency
+    individual_check_exec = %{exec | max_concurrent_check_runs: file_concurrency}
+
     check_tuples
-    |> Task.async_stream(&run_check(exec, &1), timeout: :infinity, ordered: false)
+    |> Task.async_stream(&run_check(individual_check_exec, &1),
+      timeout: :infinity,
+      ordered: false,
+      max_concurrency: check_concurrency
+    )
     |> Stream.run()
 
     :ok

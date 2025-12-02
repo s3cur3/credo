@@ -40,6 +40,8 @@ defmodule Credo.ConfigBuilder do
       | files: config_file.files,
         color: config_file.color,
         checks: config_file.checks,
+        max_concurrent_check_runs:
+          config_file.max_concurrent_check_runs || exec.max_concurrent_check_runs,
         requires: config_file.requires,
         plugins: config_file.plugins,
         parse_timeout: config_file.parse_timeout

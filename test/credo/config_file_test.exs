@@ -488,4 +488,113 @@ defmodule Credo.ConfigFileTest do
     assert is_list(result.files.excluded)
     assert is_list(result.checks)
   end
+
+  @tag :tmp_dir
+  test "loads max_concurrent_check_runs from config file", %{tmp_dir: tmp_dir} do
+    configured_value = 99
+
+    config_content = """
+    %{
+      configs: [
+        %{
+          name: "default",
+          max_concurrent_check_runs: #{configured_value},
+          files: %{
+            included: ["lib/"],
+            excluded: []
+          },
+          checks: []
+        }
+      ]
+    }
+    """
+
+    config_file_path = Path.join(tmp_dir, "max_concurrent_check_runs_test.exs")
+    File.write!(config_file_path, config_content)
+
+    try do
+      exec = Credo.Execution.build([])
+      {:ok, result} = ConfigFile.read_from_file_path(exec, ".", config_file_path)
+      assert result.max_concurrent_check_runs == configured_value
+    after
+      File.rm_rf(tmp_dir)
+    end
+  end
+
+  test "merge max_concurrent_check_runs correctly" do
+    for base_value <- [nil, 4] do
+      base = %ConfigFile{
+        max_concurrent_check_runs: base_value,
+        files: %{
+          included: ["lib/"],
+          excluded: []
+        },
+        checks: []
+      }
+
+      other = %{base | max_concurrent_check_runs: 99}
+
+      {:ok, merged} = ConfigFile.merge({:ok, base}, {:ok, other})
+      assert merged.max_concurrent_check_runs == other.max_concurrent_check_runs
+    end
+  end
+
+  test "merge max_concurrent_check_runs preserves base when other is invalid" do
+    for new_value <- [nil, -1, 0] do
+      base = %ConfigFile{
+        max_concurrent_check_runs: 4,
+        files: %{
+          included: ["lib/"],
+          excluded: []
+        },
+        checks: []
+      }
+
+      other = %{base | max_concurrent_check_runs: new_value}
+
+      {:ok, merged} = ConfigFile.merge({:ok, base}, {:ok, other})
+      assert merged.max_concurrent_check_runs == base.max_concurrent_check_runs
+    end
+  end
+
+  @tag :tmp_dir
+  test "on invalid max_concurrent_check_runs, defaults to schedulers_online", %{tmp_dir: tmp_dir} do
+    try do
+      for configured_value <- [nil, 0, -1, "not_an_int"] do
+        config_content = """
+        %{
+          configs: [
+            %{
+              name: "default",
+              max_concurrent_check_runs: #{inspect(configured_value)},
+              files: %{
+                included: ["lib/"],
+                excluded: []
+              },
+              checks: []
+            }
+          ]
+        }
+        """
+
+        config_file_path = Path.join(tmp_dir, "max_concurrent_check_runs_test.exs")
+        File.write!(config_file_path, config_content)
+
+        exec = Credo.Execution.build([])
+        {:ok, result} = ConfigFile.read_from_file_path(exec, ".", config_file_path)
+        assert result.max_concurrent_check_runs == System.schedulers_online() * 4
+      end
+    after
+      File.rm_rf(tmp_dir)
+    end
+  end
+
+  test "max_concurrent_check_runs defaults to 4 * System.schedulers_online() when not specified" do
+    exec = Credo.Execution.build([])
+    config_file = Path.join([File.cwd!(), "test", "fixtures", "custom-config.exs"])
+    config_name = "empty-config"
+
+    {:ok, result} = ConfigFile.read_from_file_path(exec, ".", config_file, config_name)
+    assert result.max_concurrent_check_runs == System.schedulers_online() * 4
+  end
 end

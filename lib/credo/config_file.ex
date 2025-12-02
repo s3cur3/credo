@@ -15,6 +15,11 @@ defmodule Credo.ConfigFile do
   @default_color true
   @valid_checks_keys ~w(enabled disabled extra)a
 
+  # Value we multiply System.schedulers_online() by to get the default max_concurrent_check_runs.
+  # This was determined empirically as the sweet spot for performance on an M4 Max MacBook Pro;
+  # values of 3 or 5 were slower by about 10%, with even worse performance farther from 4.
+  @default_max_concurrent_check_runs_factor 4
+
   alias Credo.Execution
 
   defstruct origin: nil,
@@ -23,6 +28,7 @@ defmodule Credo.ConfigFile do
             files: nil,
             color: true,
             checks: nil,
+            max_concurrent_check_runs: nil,
             requires: [],
             plugins: [],
             parse_timeout: nil,
@@ -141,6 +147,11 @@ defmodule Credo.ConfigFile do
         included: merge_files_default(@default_files_included, config.files.included),
         excluded: merge_files_default(@default_files_excluded, config.files.excluded)
       },
+      max_concurrent_check_runs:
+        merge_max_concurrent_check_runs(
+          System.schedulers_online() * @default_max_concurrent_check_runs_factor,
+          config.max_concurrent_check_runs
+        ),
       parse_timeout: merge_parse_timeout(@default_parse_timeout, config.parse_timeout),
       plugins: config.plugins || [],
       requires: config.requires || [],
@@ -202,6 +213,7 @@ defmodule Credo.ConfigFile do
       checks: checks_from_data(data, filename),
       color: data[:color],
       files: files_from_data(data, dir),
+      max_concurrent_check_runs: data[:max_concurrent_check_runs],
       parse_timeout: data[:parse_timeout],
       plugins: data[:plugins] || [],
       requires: data[:requires] || [],
@@ -324,6 +336,11 @@ defmodule Credo.ConfigFile do
       checks: merge_checks(base, other),
       color: merge_boolean(base.color, other.color),
       files: merge_files(base, other),
+      max_concurrent_check_runs:
+        merge_max_concurrent_check_runs(
+          base.max_concurrent_check_runs,
+          other.max_concurrent_check_runs
+        ),
       parse_timeout: merge_parse_timeout(base.parse_timeout, other.parse_timeout),
       plugins: base.plugins ++ other.plugins,
       requires: base.requires ++ other.requires,
@@ -344,6 +361,12 @@ defmodule Credo.ConfigFile do
 
   defp merge_parse_timeout(_base, timeout) when is_integer(timeout), do: timeout
   defp merge_parse_timeout(base, _), do: base
+
+  defp merge_max_concurrent_check_runs(_base, other) when is_integer(other) and other > 0 do
+    other
+  end
+
+  defp merge_max_concurrent_check_runs(base, _), do: base
 
   def merge_checks(%__MODULE__{checks: checks_list_base}, %__MODULE__{checks: checks_list_other})
       when is_list(checks_list_base) and is_list(checks_list_other) do
